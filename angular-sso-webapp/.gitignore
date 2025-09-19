@@ -1,0 +1,31 @@
+# Angular
+node_modules/
+dist/
+.angular/
+.vscode/
+*.log
+.env
+.env.local
+.env.production
+# Angular build cache
+/.angular/
+.angular/
+*/.angular/
+
+# Also ensure these are included:
+/node_modules/
+/dist/
+.vscode/
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Azure AD B2C (sensitive config)
+src/app/config/auth-config.ts
+
+/.angular/

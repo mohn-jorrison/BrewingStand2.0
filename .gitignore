@@ -1,0 +1,23 @@
+﻿# Angular
+node_modules/
+dist/
+.angular/
+*.log
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Azure AD B2C (sensitive config)
+src/app/config/auth-config.ts
