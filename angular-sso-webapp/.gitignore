@@ -26,6 +26,6 @@ dist/
 Thumbs.db
 
 # Azure AD B2C (sensitive config)
-src/app/config/auth-config.ts
+#src/app/config/auth-config.ts
 
 /.angular/

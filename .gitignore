@@ -1,17 +1,17 @@
 ﻿# Angular
-node_modules/
-dist/
-.angular/
+./angular-sso-webapp/node_modules/
+./angular-sso-webapp/dist/
+./angular-sso-webapp/.angular/
 *.log
 
 # Environment files
-.env
-.env.local
-.env.production
+./angular-sso-webapp/.env
+./angular-sso-webapp/.env.local
+./angular-sso-webapp/.env.production
 
 # IDE
-.vscode/
-.idea/
+./angular-sso-webapp/.vscode/
+./angular-sso-webapp/.idea/
 *.swp
 *.swo
 
@@ -20,4 +20,4 @@ dist/
 Thumbs.db
 
 # Azure AD B2C (sensitive config)
-src/app/config/auth-config.ts
+#src/app/config/auth-config.ts
