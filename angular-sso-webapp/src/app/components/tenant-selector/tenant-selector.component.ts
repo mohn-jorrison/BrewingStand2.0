@@ -254,6 +254,12 @@ export class TenantSelectorComponent implements OnInit, OnDestroy {
       features: ['Rounded Design', 'Purple Theme', 'Vibrant Animations']
     },
     {
+      id: 'tech-startup',
+      name: 'NovaTech (Custom Template)',
+      description: 'Dynamic template with startup flair - emojis, fun messaging, and unique styling',
+      features: ['Custom Template', 'Dynamic Layout', 'Startup Vibes', 'Emoji UI']
+    },
+    {
       id: 'creative',
       name: 'Creative Agency',
       description: 'Card-based mobile-first design with creative animations and layouts',
@@ -288,6 +294,8 @@ export class TenantSelectorComponent implements OnInit, OnDestroy {
         return 'linear-gradient(135deg, #6175be, #eab308)';
       case 'startup':
         return 'linear-gradient(135deg, #d946ef, #c026d3)';
+      case 'tech-startup':
+        return 'linear-gradient(135deg, #667eea, #764ba2, #f59e0b)';
       case 'creative':
         return 'linear-gradient(135deg, #f97316, #22c55e, #f59e0b)';
       default:

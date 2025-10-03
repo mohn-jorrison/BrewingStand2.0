@@ -1,10 +1,11 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, ViewChild, ViewContainerRef, ComponentRef, Renderer2, Injector, createComponent, EnvironmentInjector } from '@angular/core';
 import { Router } from '@angular/router';
-import { Subject, takeUntil } from 'rxjs';
+import { Subject, takeUntil, combineLatest } from 'rxjs';
 import { CommonModule } from '@angular/common';
 
 import { AuthService, AuthState, User } from '../../services/auth.service';
 import { TenantConfigService } from '../../services/tenant-config.service';
+import { TemplateService } from '../../services/template.service';
 import { TenantConfiguration, Product } from '../../models/tenant-config.model';
 
 import { ConfigurableCardComponent } from '../ui/configurable-card/configurable-card.component';
@@ -19,7 +20,11 @@ import { ConfigurableButtonComponent } from '../ui/configurable-button/configura
     ConfigurableButtonComponent
   ],
   template: `
-    <div class="dashboard-container">
+    <!-- Dynamic template container - always present but hidden when not in use -->
+    <div #dynamicTemplateContainer [style.display]="useCustomTemplate ? 'block' : 'none'"></div>
+    
+    <!-- Fallback to default template -->
+    <div *ngIf="!useCustomTemplate" class="dashboard-container">
       <!-- Header -->
       <header [class]="getHeaderClasses()">
         <div class="header-content">
@@ -792,18 +797,29 @@ import { ConfigurableButtonComponent } from '../ui/configurable-button/configura
     }
   `]
 })
-export class DashboardComponent implements OnInit, OnDestroy {
+export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   currentUser: User | null = null;
   tenantConfig: TenantConfiguration | null = null;
   products: Product[] = [];
   showLogoutModal = false;
+  useCustomTemplate = false;
+  private viewInitialized = false;
+  private pendingTemplateLoad: { tenantId: string } | null = null;
+
+  @ViewChild('dynamicTemplateContainer', { read: ViewContainerRef }) 
+  dynamicContainer!: ViewContainerRef;
 
   private destroy$ = new Subject<void>();
+  private dynamicComponentRef: ComponentRef<any> | null = null;
 
   constructor(
     private authService: AuthService,
     private tenantConfigService: TenantConfigService,
-    private router: Router
+    private templateService: TemplateService,
+    private router: Router,
+    private renderer: Renderer2,
+    private injector: Injector,
+    private environmentInjector: EnvironmentInjector
   ) {}
 
   ngOnInit(): void {
@@ -818,18 +834,49 @@ export class DashboardComponent implements OnInit, OnDestroy {
         }
       });
 
-    // Subscribe to tenant configuration
-    this.tenantConfigService.currentTenant$
-      .pipe(takeUntil(this.destroy$))
-      .subscribe((config: TenantConfiguration | null) => {
-        this.tenantConfig = config;
-      });
+    // Subscribe to tenant configuration and load custom template
+    combineLatest([
+      this.tenantConfigService.currentTenant$,
+      this.authService.authState$
+    ]).pipe(
+      takeUntil(this.destroy$)
+    ).subscribe(([config, authState]) => {
+      this.tenantConfig = config;
+      
+      if (config && authState.isAuthenticated && config.customization?.enableCustomTemplates) {
+        // Apply custom styles immediately
+        this.applyCustomStyles(config.tenantId);
+        
+        // Load template after view is initialized
+        if (this.viewInitialized) {
+          this.loadCustomTemplate(config.tenantId);
+        } else {
+          this.pendingTemplateLoad = { tenantId: config.tenantId };
+        }
+      } else {
+        this.useCustomTemplate = false;
+        this.pendingTemplateLoad = null;
+      }
+    });
 
     // Load mock products
     this.loadProducts();
   }
 
+  ngAfterViewInit(): void {
+    this.viewInitialized = true;
+    
+    // Load pending template if any
+    if (this.pendingTemplateLoad) {
+      this.loadCustomTemplate(this.pendingTemplateLoad.tenantId);
+      this.pendingTemplateLoad = null;
+    }
+  }
+
   ngOnDestroy(): void {
+    if (this.dynamicComponentRef) {
+      this.dynamicComponentRef.destroy();
+    }
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -928,6 +975,172 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
     
     return classes.join(' ');
+  }
+
+  private loadCustomTemplate(tenantId: string): void {
+    if (!this.viewInitialized || !this.dynamicContainer) {
+      console.warn('ViewChild not ready, deferring template load');
+      this.pendingTemplateLoad = { tenantId };
+      return;
+    }
+
+    this.templateService.getTenantTemplate(tenantId, 'dashboard')
+      .subscribe({
+        next: (template) => {
+          if (template) {
+            this.createDynamicComponent(template);
+          } else {
+            console.log('No custom template found for tenant:', tenantId);
+            this.useCustomTemplate = false;
+          }
+        },
+        error: (error) => {
+          console.error('Error loading template:', error);
+          this.useCustomTemplate = false;
+        }
+      });
+  }
+
+  private applyCustomStyles(tenantId: string): void {
+    const customStyles = this.templateService.getTenantStyles(tenantId);
+    if (customStyles) {
+      const existingStyle = document.getElementById('tenant-template-css');
+      if (existingStyle) {
+        existingStyle.remove();
+      }
+
+      const style = document.createElement('style');
+      style.id = 'tenant-template-css';
+      style.textContent = customStyles;
+      document.head.appendChild(style);
+    }
+  }
+
+  private createDynamicComponent(template: string): void {
+    if (!this.dynamicContainer) {
+      console.error('Dynamic container not available');
+      this.useCustomTemplate = false;
+      return;
+    }
+
+    // Clean up existing content
+    if (this.dynamicComponentRef) {
+      this.dynamicComponentRef.destroy();
+      this.dynamicComponentRef = null;
+    }
+
+    try {
+      // Clear the container
+      this.dynamicContainer.clear();
+      
+      // Instead of creating a dynamic component, we'll render the template as HTML
+      // and handle Angular directives through a simpler approach
+      const containerElement = this.dynamicContainer.element.nativeElement;
+      containerElement.innerHTML = template;
+      
+      // Apply event listeners and data binding manually for the custom template
+      this.bindCustomTemplateEvents(containerElement);
+      
+      this.useCustomTemplate = true;
+      console.log('Dynamic template loaded successfully');
+
+    } catch (error) {
+      console.error('Error creating dynamic template:', error);
+      this.useCustomTemplate = false;
+    }
+  }
+
+  private bindCustomTemplateEvents(containerElement: HTMLElement): void {
+    // Bind product click events
+    const productCards = containerElement.querySelectorAll('[data-product-id]');
+    productCards.forEach(card => {
+      const productId = card.getAttribute('data-product-id');
+      const product = this.products.find(p => p.id === productId);
+      if (product && product.hasAccess) {
+        card.addEventListener('click', () => this.onProductClick(product));
+      }
+    });
+
+    // Bind logout button
+    const logoutBtn = containerElement.querySelector('[data-action="logout"]');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', () => this.showLogoutConfirm());
+    }
+
+    // Update dynamic content
+    this.updateDynamicContent(containerElement);
+  }
+
+  private updateDynamicContent(containerElement: HTMLElement): void {
+    // Update user information
+    const userNameElements = containerElement.querySelectorAll('[data-user-name]');
+    userNameElements.forEach(el => {
+      el.textContent = this.currentUser?.name || this.currentUser?.email || 'User';
+    });
+
+    const userEmailElements = containerElement.querySelectorAll('[data-user-email]');
+    userEmailElements.forEach(el => {
+      el.textContent = this.currentUser?.email || '';
+    });
+
+    const userInitialsElements = containerElement.querySelectorAll('[data-user-initials]');
+    userInitialsElements.forEach(el => {
+      el.textContent = this.getCurrentUserInitials();
+    });
+
+    // Update tenant information
+    const tenantNameElements = containerElement.querySelectorAll('[data-tenant-name]');
+    tenantNameElements.forEach(el => {
+      el.textContent = this.tenantConfig?.name || 'Enterprise Portal';
+    });
+
+    // Update product counts
+    const accessibleCountElements = containerElement.querySelectorAll('[data-accessible-count]');
+    accessibleCountElements.forEach(el => {
+      el.textContent = this.getAccessibleProductsCount().toString();
+    });
+
+    const restrictedCountElements = containerElement.querySelectorAll('[data-restricted-count]');
+    restrictedCountElements.forEach(el => {
+      el.textContent = this.getRestrictedProductsCount().toString();
+    });
+
+    // Update product lists
+    this.updateProductList(containerElement, '[data-accessible-products]', this.getAccessibleProducts(), true);
+    this.updateProductList(containerElement, '[data-restricted-products]', this.getRestrictedProducts(), false);
+  }
+
+  private updateProductList(containerElement: HTMLElement, selector: string, products: Product[], accessible: boolean): void {
+    const productContainer = containerElement.querySelector(selector);
+    if (!productContainer) return;
+
+    productContainer.innerHTML = '';
+    
+    products.forEach(product => {
+      const productElement = document.createElement('div');
+      productElement.className = `product-item ${accessible ? 'accessible' : 'restricted'}`;
+      productElement.setAttribute('data-product-id', product.id);
+      
+      productElement.innerHTML = `
+        <div class="product-icon">
+          <span class="icon-${product.iconName}">🔧</span>
+        </div>
+        <div class="product-info">
+          <h4>${product.name}</h4>
+          <p>${product.description}</p>
+          <span class="category">${product.category}</span>
+        </div>
+        <div class="product-status">
+          ${accessible ? '✅' : '❌'} ${accessible ? 'Accessible' : 'Restricted'}
+        </div>
+      `;
+      
+      if (accessible) {
+        productElement.style.cursor = 'pointer';
+      }
+      
+      productContainer.appendChild(productElement);
+    });
   }
 
   private loadProducts(): void {

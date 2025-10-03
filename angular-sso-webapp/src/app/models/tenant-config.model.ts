@@ -89,11 +89,16 @@ export interface TenantConfiguration {
       itemsPerRow: number;
       showCategories: boolean;
     };
+    // Add template storage
+    customTemplate?: string; // Base64 encoded template
   };
   customization: {
     enableCustomCss: boolean;
     customJavaScript?: string;
     additionalFonts?: string[];
+    // Add template management
+    enableCustomTemplates?: boolean;
+    templateVersion?: string;
   };
 }
 
